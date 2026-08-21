@@ -2,322 +2,449 @@ import {
   BlockPermutation,
   BlockVolume,
   Dimension,
-  DimensionLocation,
   Player,
   Vector3,
   system,
   world,
 } from "@minecraft/server";
 
-const REALM_ID = "crystal_void:realm";
-const CRYSTAL_ID = "crystal_void:dimension_crystal";
-const ANCHOR_ID = "crystal_void:void_anchor";
-const VOIDSTONE_ID = "crystal_void:voidstone";
+const HEART_ID = "dark_castle:ddx56";
+const LEVER_ID = "minecraft:lever";
+const activeBuilds = new Set<string>();
+let buildSequence = 0;
 
-const REALM_FLOOR_Y = 80;
-const REALM_ARRIVAL: Vector3 = { x: 0.5, y: REALM_FLOOR_Y + 1, z: 5.5 };
-const REALM_CENTER: Vector3 = { x: 0.5, y: REALM_FLOOR_Y + 1, z: 0.5 };
-const MARKER_LOCATION: Vector3 = { x: 0, y: 60, z: 0 };
+interface LocalPoint {
+  x: number;
+  y: number;
+  z: number;
+}
 
-const RETURN_DIMENSION = "crystal_void:return_dimension";
-const RETURN_X = "crystal_void:return_x";
-const RETURN_Y = "crystal_void:return_y";
-const RETURN_Z = "crystal_void:return_z";
-
-const busyPlayers = new Set<string>();
-let realmBuildPromise: Promise<void> | undefined;
-let tickingAreaSequence = 0;
-
-// Script-created dimensions must be registered during startup.
-system.beforeEvents.startup.subscribe((event) => {
-  event.dimensionRegistry.registerCustomDimension(REALM_ID);
-});
-
-// A Dimension Crystal activates any Void Anchor. The same interaction returns
-// the player when it is performed inside the Crystal Void.
-//
-// Mobile note: a custom block with no built-in use behavior does not reliably
-// fire the "successful interaction" after-event on touch controls, so the
-// activation runs on the before-event instead. Cancelling the interaction
-// stops the engine from also running its default response, and isFirstEvent
-// ignores the repeat events generated while a touch button is held down.
 world.beforeEvents.playerInteractWithBlock.subscribe((event) => {
-  if (event.block.typeId !== ANCHOR_ID || event.itemStack?.typeId !== CRYSTAL_ID) {
-    return;
-  }
+  if (event.block.typeId !== LEVER_ID || !event.isFirstEvent) return;
+
+  const heart = findAdjacentHeart(event.block.dimension, event.block.location);
+  if (!heart) return;
 
   event.cancel = true;
-  if (!event.isFirstEvent) {
+  const key = `${event.block.dimension.id}:${heart.x}:${heart.y}:${heart.z}`;
+  if (activeBuilds.has(key)) {
+    event.player.onScreenDisplay.setActionBar("§4The Castle Heart is already awakening…");
     return;
   }
 
+  activeBuilds.add(key);
   const player = event.player;
-  if (busyPlayers.has(player.id)) {
-    player.onScreenDisplay.setActionBar("§dThe anchor is already responding…");
-    return;
-  }
-
-  busyPlayers.add(player.id);
+  const rotation = rotationFromView(player.getViewDirection());
   system.run(() => {
-    void useVoidAnchor(player)
+    void constructCastle(player, event.block.dimension, heart, rotation)
       .catch((error: unknown) => {
         try {
-          player.sendMessage(`§cThe Void Anchor failed: ${formatError(error)}`);
+          player.sendMessage(`§cCastle construction failed: ${formatError(error)}`);
         } catch {
-          // The player may have left while the asynchronous teleport was running.
+          // The player may have left the world during construction.
         }
       })
-      .finally(() => busyPlayers.delete(player.id));
+      .finally(() => activeBuilds.delete(key));
   });
 });
 
 world.afterEvents.playerPlaceBlock.subscribe((event) => {
-  if (event.block.typeId === ANCHOR_ID) {
-    event.player.sendMessage("§5Void Anchor placed. §rHold a §dDimension Crystal§r and tap the anchor.");
-  }
+  if (event.block.typeId !== HEART_ID) return;
+  event.player.sendMessage("§4§lDDX56 Castle Heart placed.§r");
+  event.player.sendMessage("§7Attach a normal §flever§7 to the top or side, then pull it while facing the direction the castle should extend.");
+  event.player.sendMessage("§cWarning: the castle replaces blocks in a 69 × 75 × 52 area.");
 });
 
-async function useVoidAnchor(player: Player): Promise<void> {
-  playPortalSound(player, 0.7);
-
-  if (player.dimension.id === REALM_ID) {
-    await returnFromRealm(player);
-    return;
+function findAdjacentHeart(dimension: Dimension, lever: Vector3): Vector3 | undefined {
+  const offsets: Vector3[] = [
+    { x: 0, y: -1, z: 0 },
+    { x: 0, y: 1, z: 0 },
+    { x: -1, y: 0, z: 0 },
+    { x: 1, y: 0, z: 0 },
+    { x: 0, y: 0, z: -1 },
+    { x: 0, y: 0, z: 1 },
+  ];
+  for (const offset of offsets) {
+    const location = { x: lever.x + offset.x, y: lever.y + offset.y, z: lever.z + offset.z };
+    if (dimension.getBlock(location)?.typeId === HEART_ID) return location;
   }
-
-  rememberReturnPoint(player);
-  player.sendMessage("§5The crystal hums as a new realm takes shape…");
-  player.onScreenDisplay.setActionBar("§dOpening the Crystal Void…");
-
-  await ensureRealmBuilt();
-  const realm = world.getDimension(REALM_ID);
-  await teleportWithLoadedArea(player, realm, REALM_ARRIVAL, REALM_CENTER);
-
-  protectArrival(player);
-  playPortalSound(player, 1.2);
-  player.onScreenDisplay.setTitle("§5§lThe Crystal Void§r", {
-    subtitle: "§dA world between worlds",
-    fadeInDuration: 10,
-    stayDuration: 60,
-    fadeOutDuration: 20,
-  });
-  player.sendMessage("§7Use the §dDimension Crystal§7 on the central §5Void Anchor§7 to return.");
+  return undefined;
 }
 
-async function returnFromRealm(player: Player): Promise<void> {
-  const destination = getReturnPoint(player);
-  player.onScreenDisplay.setActionBar("§dThe anchor remembers your world…");
-
-  await teleportWithLoadedArea(
-    player,
-    destination.dimension,
-    destination,
-    { x: destination.x, y: destination.y, z: destination.z + 1 },
-  );
-
-  protectArrival(player);
-  playPortalSound(player, 0.9);
-  player.onScreenDisplay.setTitle("§aReturned", {
-    subtitle: "§7The Crystal Void fades behind you",
-    fadeInDuration: 5,
-    stayDuration: 35,
-    fadeOutDuration: 15,
-  });
+function rotationFromView(view: Vector3): number {
+  if (Math.abs(view.x) > Math.abs(view.z)) return view.x >= 0 ? 1 : 3;
+  return view.z >= 0 ? 0 : 2;
 }
 
-function rememberReturnPoint(player: Player): void {
-  player.setDynamicProperty(RETURN_DIMENSION, player.dimension.id);
-  player.setDynamicProperty(RETURN_X, player.location.x);
-  player.setDynamicProperty(RETURN_Y, player.location.y);
-  player.setDynamicProperty(RETURN_Z, player.location.z);
-}
-
-function getReturnPoint(player: Player): DimensionLocation {
-  const dimensionId = player.getDynamicProperty(RETURN_DIMENSION);
-  const x = player.getDynamicProperty(RETURN_X);
-  const y = player.getDynamicProperty(RETURN_Y);
-  const z = player.getDynamicProperty(RETURN_Z);
-
-  if (
-    typeof dimensionId === "string" &&
-    typeof x === "number" &&
-    typeof y === "number" &&
-    typeof z === "number"
-  ) {
-    return { dimension: world.getDimension(dimensionId), x, y, z };
-  }
-
-  const personalSpawn = player.getSpawnPoint();
-  if (personalSpawn) {
-    return {
-      dimension: personalSpawn.dimension,
-      x: personalSpawn.x + 0.5,
-      y: personalSpawn.y + 1,
-      z: personalSpawn.z + 0.5,
-    };
-  }
-
-  const worldSpawn = world.getDefaultSpawnLocation();
-  return {
-    dimension: world.getDimension("minecraft:overworld"),
-    x: worldSpawn.x + 0.5,
-    y: worldSpawn.y > 320 ? 100 : worldSpawn.y + 1,
-    z: worldSpawn.z + 0.5,
-  };
-}
-
-async function teleportWithLoadedArea(
+async function constructCastle(
   player: Player,
   dimension: Dimension,
-  destination: Vector3,
-  facingLocation: Vector3,
+  origin: Vector3,
+  rotation: number,
 ): Promise<void> {
-  const areaId = `crystal_void_travel_${tickingAreaSequence++}`;
-  const from = {
-    x: Math.floor(destination.x) - 4,
-    y: Math.floor(destination.y) - 4,
-    z: Math.floor(destination.z) - 4,
-  };
-  const to = {
-    x: Math.floor(destination.x) + 4,
-    y: Math.floor(destination.y) + 4,
-    z: Math.floor(destination.z) + 4,
-  };
+  const builder = new CastleBuilder(dimension, origin, rotation);
+  const areaId = `dark_castle_${buildSequence++}`;
+  const cornerA = builder.worldPoint({ x: -36, y: -3, z: -2 });
+  const cornerB = builder.worldPoint({ x: 36, y: 52, z: 77 });
 
-  await world.tickingAreaManager.createTickingArea(areaId, { dimension, from, to });
-  try {
-    player.teleport(destination, { dimension, facingLocation });
-  } finally {
-    world.tickingAreaManager.removeTickingArea(areaId);
-  }
-}
-
-function ensureRealmBuilt(): Promise<void> {
-  if (!realmBuildPromise) {
-    realmBuildPromise = buildRealmIfNeeded().catch((error: unknown) => {
-      realmBuildPromise = undefined;
-      throw error;
-    });
-  }
-  return realmBuildPromise;
-}
-
-async function buildRealmIfNeeded(): Promise<void> {
-  const realm = world.getDimension(REALM_ID);
-  const areaId = "crystal_void_realm_setup";
+  player.sendMessage("§8The ancient mechanism accepts your command…");
+  player.onScreenDisplay.setTitle("§4§lTHE DARK CASTLE RISES", {
+    subtitle: "§7Stone, iron, and dragonfire answer the DDX56",
+    fadeInDuration: 5,
+    stayDuration: 55,
+    fadeOutDuration: 15,
+  });
 
   await world.tickingAreaManager.createTickingArea(areaId, {
-    dimension: realm,
-    from: { x: -20, y: 58, z: -20 },
-    to: { x: 20, y: 90, z: 20 },
+    dimension,
+    from: {
+      x: Math.min(cornerA.x, cornerB.x),
+      y: Math.min(cornerA.y, cornerB.y),
+      z: Math.min(cornerA.z, cornerB.z),
+    },
+    to: {
+      x: Math.max(cornerA.x, cornerB.x),
+      y: Math.max(cornerA.y, cornerB.y),
+      z: Math.max(cornerA.z, cornerB.z),
+    },
   });
 
   try {
-    const marker = realm.getBlock(MARKER_LOCATION);
-    if (marker?.typeId === "minecraft:bedrock") {
-      return;
-    }
-
-    await runBuildJob(createRealmBuildSteps(realm));
+    builder.set({ x: 0, y: 0, z: 0 }, "minecraft:crying_obsidian");
+    await runBuildJob(buildRoyalCastle(builder, player));
   } finally {
     world.tickingAreaManager.removeTickingArea(areaId);
   }
+
+  player.playSound("beacon.activate", { volume: 1, pitch: 0.55 });
+  player.onScreenDisplay.setTitle("§6§lCASTLE COMPLETE", {
+    subtitle: "§7The Black Dragon now watches from above",
+    fadeInDuration: 5,
+    stayDuration: 70,
+    fadeOutDuration: 20,
+  });
+  player.sendMessage("§6Your furnished royal fortress is complete. §7Enter through the gate behind the Castle Heart.");
 }
 
-function* createRealmBuildSteps(realm: Dimension): Generator<void, void, void> {
-  const voidstone = BlockPermutation.resolve(VOIDSTONE_ID);
-  const cryingObsidian = BlockPermutation.resolve("minecraft:crying_obsidian");
-  const obsidian = BlockPermutation.resolve("minecraft:obsidian");
-  const amethyst = BlockPermutation.resolve("minecraft:amethyst_block");
-  const buddingAmethyst = BlockPermutation.resolve("minecraft:budding_amethyst");
-  const glowstone = BlockPermutation.resolve("minecraft:glowstone");
-  const endRod = BlockPermutation.resolve("minecraft:end_rod");
-  const anchor = BlockPermutation.resolve(ANCHOR_ID);
-  const bedrock = BlockPermutation.resolve("minecraft:bedrock");
+class CastleBuilder {
+  private readonly permutations = new Map<string, BlockPermutation>();
 
-  let operations = 0;
+  constructor(
+    readonly dimension: Dimension,
+    readonly origin: Vector3,
+    readonly rotation: number,
+  ) {}
 
-  // Build a tapered floating island one horizontal strip at a time.
-  const radii = [16, 15, 14, 13, 12, 11, 9, 8, 7, 6, 5, 4, 2];
-  for (let depth = 0; depth < radii.length; depth++) {
-    const y = REALM_FLOOR_Y - depth;
-    const radius = radii[depth];
-    const layerBlock = depth === 3 || depth === 7 ? cryingObsidian : voidstone;
-
-    for (let z = -radius; z <= radius; z++) {
-      const halfWidth = Math.floor(Math.sqrt(radius * radius - z * z));
-      realm.fillBlocks(
-        new BlockVolume({ x: -halfWidth, y, z }, { x: halfWidth, y, z }),
-        layerBlock,
-      );
-
-      operations++;
-      if (operations % 18 === 0) {
-        yield;
-      }
+  worldPoint(point: LocalPoint): Vector3 {
+    const y = this.origin.y + point.y;
+    switch (this.rotation) {
+      case 1: return { x: this.origin.x + point.z, y, z: this.origin.z - point.x };
+      case 2: return { x: this.origin.x - point.x, y, z: this.origin.z - point.z };
+      case 3: return { x: this.origin.x - point.z, y, z: this.origin.z + point.x };
+      default: return { x: this.origin.x + point.x, y, z: this.origin.z + point.z };
     }
   }
 
-  // Etch an amethyst ring and four runes into the top surface.
-  for (let x = -15; x <= 15; x++) {
-    for (let z = -15; z <= 15; z++) {
-      const distanceSquared = x * x + z * z;
-      if (distanceSquared >= 18 && distanceSquared <= 27) {
-        setBlock(realm, { x, y: REALM_FLOOR_Y, z }, amethyst);
-      } else if ((Math.abs(x) === Math.abs(z) && Math.abs(x) <= 3) || (x === 0 && Math.abs(z) <= 3)) {
-        setBlock(realm, { x, y: REALM_FLOOR_Y, z }, cryingObsidian);
-      }
+  permutation(typeId: string): BlockPermutation {
+    let value = this.permutations.get(typeId);
+    if (!value) {
+      value = BlockPermutation.resolve(typeId);
+      this.permutations.set(typeId, value);
     }
-    if (x % 4 === 0) {
-      yield;
-    }
+    return value;
   }
 
-  // The return anchor sits in the center of the island.
-  setBlock(realm, { x: 0, y: REALM_FLOOR_Y + 1, z: 0 }, anchor);
+  set(point: LocalPoint, typeId: string): void {
+    this.dimension.getBlock(this.worldPoint(point))?.setPermutation(this.permutation(typeId));
+  }
 
-  // Hand-built crystal spires make the otherwise empty realm feel alive.
-  const spires = [
-    { x: -10, z: -8, height: 5 },
-    { x: 10, z: -7, height: 7 },
-    { x: -9, z: 9, height: 6 },
-    { x: 10, z: 8, height: 4 },
-    { x: 0, z: -12, height: 5 },
-    { x: -13, z: 1, height: 3 },
-    { x: 13, z: 2, height: 3 },
-  ];
+  fill(a: LocalPoint, b: LocalPoint, typeId: string): void {
+    const wa = this.worldPoint(a);
+    const wb = this.worldPoint(b);
+    this.dimension.fillBlocks(
+      new BlockVolume(
+        { x: Math.min(wa.x, wb.x), y: Math.min(wa.y, wb.y), z: Math.min(wa.z, wb.z) },
+        { x: Math.max(wa.x, wb.x), y: Math.max(wa.y, wb.y), z: Math.max(wa.z, wb.z) },
+      ),
+      this.permutation(typeId),
+    );
+  }
 
-  for (const spire of spires) {
-    setBlock(realm, { x: spire.x, y: REALM_FLOOR_Y, z: spire.z }, obsidian);
-    setBlock(realm, { x: spire.x + 1, y: REALM_FLOOR_Y, z: spire.z }, amethyst);
-    setBlock(realm, { x: spire.x - 1, y: REALM_FLOOR_Y, z: spire.z }, amethyst);
-    setBlock(realm, { x: spire.x, y: REALM_FLOOR_Y, z: spire.z + 1 }, buddingAmethyst);
-    setBlock(realm, { x: spire.x, y: REALM_FLOOR_Y, z: spire.z - 1 }, amethyst);
+  hollow(a: LocalPoint, b: LocalPoint, wall: string, floor = wall): void {
+    this.fill({ x: a.x, y: a.y, z: a.z }, { x: b.x, y: a.y, z: b.z }, floor);
+    this.fill({ x: a.x, y: b.y, z: a.z }, { x: b.x, y: b.y, z: b.z }, wall);
+    this.fill({ x: a.x, y: a.y + 1, z: a.z }, { x: a.x, y: b.y - 1, z: b.z }, wall);
+    this.fill({ x: b.x, y: a.y + 1, z: a.z }, { x: b.x, y: b.y - 1, z: b.z }, wall);
+    this.fill({ x: a.x + 1, y: a.y + 1, z: a.z }, { x: b.x - 1, y: b.y - 1, z: a.z }, wall);
+    this.fill({ x: a.x + 1, y: a.y + 1, z: b.z }, { x: b.x - 1, y: b.y - 1, z: b.z }, wall);
+    if (b.x - a.x > 1 && b.z - a.z > 1 && b.y - a.y > 1) {
+      this.fill({ x: a.x + 1, y: a.y + 1, z: a.z + 1 }, { x: b.x - 1, y: b.y - 1, z: b.z - 1 }, "minecraft:air");
+    }
+  }
+}
 
-    for (let y = 1; y <= spire.height; y++) {
-      const material = y === spire.height ? glowstone : y % 2 === 0 ? buddingAmethyst : amethyst;
-      setBlock(realm, { x: spire.x, y: REALM_FLOOR_Y + y, z: spire.z }, material);
+function* buildRoyalCastle(b: CastleBuilder, player: Player): Generator<void, void, void> {
+  const stone = "minecraft:deepslate_bricks";
+  const trim = "minecraft:polished_blackstone_bricks";
+  const roof = "minecraft:blackstone";
+  const floor = "minecraft:polished_deepslate";
+  const red = "minecraft:red_nether_bricks";
+  const gold = "minecraft:gold_block";
+  let stage = 0;
+  const progress = (message: string): void => {
+    player.onScreenDisplay.setActionBar(`§4DDX56 §8• §7${message}`);
+  };
+
+  progress("raising the foundations");
+  b.fill({ x: -34, y: -2, z: 3 }, { x: 34, y: -1, z: 75 }, "minecraft:cobbled_deepslate");
+  b.fill({ x: -33, y: 0, z: 4 }, { x: 33, y: 0, z: 74 }, floor);
+  b.fill({ x: -4, y: 0, z: -1 }, { x: 4, y: 0, z: 27 }, "minecraft:polished_blackstone");
+  yield;
+
+  // Outer curtain walls and crenellations.
+  progress("raising the curtain walls");
+  b.fill({ x: -33, y: 1, z: 4 }, { x: -29, y: 13, z: 74 }, stone);
+  b.fill({ x: 29, y: 1, z: 4 }, { x: 33, y: 13, z: 74 }, stone);
+  b.fill({ x: -29, y: 1, z: 70 }, { x: 29, y: 13, z: 74 }, stone);
+  b.fill({ x: -29, y: 1, z: 4 }, { x: 29, y: 13, z: 8 }, stone);
+  b.fill({ x: -4, y: 1, z: 3 }, { x: 4, y: 11, z: 9 }, "minecraft:air");
+  b.fill({ x: -5, y: 11, z: 4 }, { x: 5, y: 13, z: 8 }, trim);
+  b.fill({ x: -3, y: 1, z: 7 }, { x: 3, y: 8, z: 7 }, "minecraft:iron_bars");
+  for (let x = -33; x <= 33; x += 4) {
+    b.fill({ x, y: 14, z: 4 }, { x: x + 1, y: 16, z: 7 }, trim);
+    b.fill({ x, y: 14, z: 71 }, { x: x + 1, y: 16, z: 74 }, trim);
+    if (++stage % 8 === 0) yield;
+  }
+  for (let z = 8; z <= 70; z += 4) {
+    b.fill({ x: -33, y: 14, z }, { x: -30, y: 16, z: z + 1 }, trim);
+    b.fill({ x: 30, y: 14, z }, { x: 33, y: 16, z: z + 1 }, trim);
+    if (++stage % 8 === 0) yield;
+  }
+
+  // Four massive corner towers.
+  progress("forming the four watchtowers");
+  for (const [cx, cz] of [[-28, 11], [28, 11], [-28, 67], [28, 67]] as const) {
+    b.hollow({ x: cx - 6, y: 0, z: cz - 6 }, { x: cx + 6, y: 22, z: cz + 6 }, stone, floor);
+    b.fill({ x: cx - 7, y: 22, z: cz - 7 }, { x: cx + 7, y: 24, z: cz + 7 }, trim);
+    b.fill({ x: cx - 5, y: 24, z: cz - 5 }, { x: cx + 5, y: 26, z: cz + 5 }, roof);
+    for (const [dx, dz] of [[-6, -6], [6, -6], [-6, 6], [6, 6]] as const) {
+      b.fill({ x: cx + dx - 1, y: 25, z: cz + dz - 1 }, { x: cx + dx + 1, y: 28, z: cz + dz + 1 }, trim);
+      b.set({ x: cx + dx, y: 29, z: cz + dz }, "minecraft:soul_lantern");
+    }
+    // Arrow-slit windows and internal floors.
+    b.fill({ x: cx - 5, y: 10, z: cz - 5 }, { x: cx + 5, y: 10, z: cz + 5 }, floor);
+    b.fill({ x: cx - 5, y: 17, z: cz - 5 }, { x: cx + 5, y: 17, z: cz + 5 }, floor);
+    b.fill({ x: cx - 1, y: 5, z: cz - 6 }, { x: cx + 1, y: 8, z: cz - 6 }, "minecraft:iron_bars");
+    b.fill({ x: cx - 1, y: 13, z: cz - 6 }, { x: cx + 1, y: 15, z: cz - 6 }, "minecraft:iron_bars");
+    yield;
+  }
+
+  // Great keep: three furnished floors and a high throne hall.
+  progress("building the royal keep");
+  b.hollow({ x: -23, y: 1, z: 27 }, { x: 23, y: 31, z: 66 }, stone, floor);
+  b.fill({ x: -22, y: 10, z: 28 }, { x: 22, y: 10, z: 65 }, floor);
+  b.fill({ x: -22, y: 20, z: 28 }, { x: 22, y: 20, z: 65 }, floor);
+  // Grand entrance and red carpet.
+  b.fill({ x: -3, y: 1, z: 27 }, { x: 3, y: 8, z: 29 }, "minecraft:air");
+  b.fill({ x: -2, y: 1, z: 28 }, { x: 2, y: 1, z: 62 }, red);
+  for (let y = 4; y <= 28; y += 6) {
+    for (const x of [-23, 23]) {
+      for (const z of [34, 46, 58]) {
+        b.fill({ x, y, z: z - 1 }, { x, y: y + 2, z: z + 1 }, "minecraft:iron_bars");
+        b.set({ x: x + (x < 0 ? 1 : -1), y: y + 1, z }, "minecraft:soul_lantern");
+      }
     }
     yield;
   }
 
-  // Four lights mark the safe arrival area.
-  for (const [x, z] of [
-    [-4, -4],
-    [4, -4],
-    [-4, 4],
-    [4, 4],
-  ] as const) {
-    setBlock(realm, { x, y: REALM_FLOOR_Y + 1, z }, cryingObsidian);
-    setBlock(realm, { x, y: REALM_FLOOR_Y + 2, z }, endRod);
+  // Throne hall columns, chandeliers, dais, and throne.
+  progress("furnishing the throne hall");
+  for (const x of [-15, -8, 8, 15]) {
+    b.fill({ x, y: 1, z: 31 }, { x: x + 1, y: 9, z: 32 }, trim);
+    b.fill({ x, y: 1, z: 48 }, { x: x + 1, y: 9, z: 49 }, trim);
+  }
+  b.fill({ x: -7, y: 1, z: 58 }, { x: 7, y: 3, z: 64 }, trim);
+  b.fill({ x: -4, y: 4, z: 61 }, { x: 4, y: 8, z: 64 }, red);
+  b.fill({ x: -3, y: 4, z: 60 }, { x: 3, y: 5, z: 63 }, gold);
+  b.fill({ x: -2, y: 6, z: 62 }, { x: 2, y: 9, z: 63 }, gold);
+  b.set({ x: 0, y: 8, z: 61 }, "minecraft:dragon_head");
+  for (const [x, z] of [[-12, 39], [12, 39], [-12, 54], [12, 54]] as const) {
+    b.fill({ x, y: 7, z }, { x, y: 9, z }, "minecraft:chain");
+    b.set({ x, y: 6, z }, "minecraft:soul_lantern");
+  }
+  yield;
+
+  // Ground-floor survival workshop, armory, kitchen, dining room, and storage.
+  progress("stocking workshops and royal chambers");
+  b.fill({ x: -22, y: 1, z: 42 }, { x: -5, y: 9, z: 42 }, stone);
+  b.fill({ x: 5, y: 1, z: 42 }, { x: 22, y: 9, z: 42 }, stone);
+  for (const [x, y, z, block] of [
+    [-20, 2, 31, "minecraft:crafting_table"], [-18, 2, 31, "minecraft:stonecutter_block"],
+    [-16, 2, 31, "minecraft:anvil"], [-14, 2, 31, "minecraft:smithing_table"],
+    [-20, 2, 34, "minecraft:furnace"], [-18, 2, 34, "minecraft:blast_furnace"],
+    [-16, 2, 34, "minecraft:grindstone"], [-14, 2, 34, "minecraft:chest"],
+    [14, 2, 31, "minecraft:smoker"], [16, 2, 31, "minecraft:furnace"],
+    [18, 2, 31, "minecraft:barrel"], [20, 2, 31, "minecraft:crafting_table"],
+    [14, 2, 38, "minecraft:cauldron"], [20, 2, 38, "minecraft:chest"],
+    [-20, 2, 45, "minecraft:chest"], [-18, 2, 45, "minecraft:barrel"],
+    [-16, 2, 45, "minecraft:chest"], [-14, 2, 45, "minecraft:barrel"],
+  ] as const) b.set({ x, y, z }, block);
+  // Dining tables and benches.
+  b.fill({ x: 9, y: 2, z: 46 }, { x: 19, y: 2, z: 48 }, "minecraft:dark_oak_planks");
+  b.fill({ x: 9, y: 1, z: 45 }, { x: 19, y: 1, z: 45 }, "minecraft:dark_oak_stairs");
+  b.fill({ x: 9, y: 1, z: 49 }, { x: 19, y: 1, z: 49 }, "minecraft:dark_oak_stairs");
+  yield;
+
+  // Second-floor library, enchanting, brewing, bedrooms, and map chamber.
+  b.fill({ x: 0, y: 11, z: 28 }, { x: 0, y: 19, z: 65 }, stone);
+  b.fill({ x: -22, y: 11, z: 47 }, { x: 22, y: 19, z: 47 }, stone);
+  for (let x = -20; x <= -3; x += 3) {
+    b.fill({ x, y: 11, z: 30 }, { x: x + 1, y: 14, z: 30 }, "minecraft:bookshelf");
+    b.fill({ x, y: 11, z: 44 }, { x: x + 1, y: 14, z: 44 }, "minecraft:bookshelf");
+  }
+  b.set({ x: -11, y: 11, z: 37 }, "minecraft:enchanting_table");
+  for (const [x, z] of [[-14, 35], [-14, 39], [-8, 35], [-8, 39]] as const) b.set({ x, y: 11, z }, "minecraft:bookshelf");
+  b.set({ x: 10, y: 11, z: 34 }, "minecraft:brewing_stand");
+  b.set({ x: 13, y: 11, z: 34 }, "minecraft:cauldron");
+  b.set({ x: 16, y: 11, z: 34 }, "minecraft:chest");
+  // Royal and guest beds.
+  for (const [x, z] of [[-15, 54], [-8, 54], [8, 54], [15, 54]] as const) {
+    b.fill({ x: x - 2, y: 11, z: z - 2 }, { x: x + 2, y: 11, z: z + 4 }, "minecraft:dark_oak_planks");
+    b.fill({ x: x - 1, y: 12, z }, { x: x + 1, y: 12, z: z + 2 }, "minecraft:red_wool");
+    b.set({ x, y: 13, z: z + 3 }, "minecraft:soul_lantern");
+  }
+  yield;
+
+  // Treasury and secure upper armory.
+  b.fill({ x: -21, y: 21, z: 29 }, { x: 21, y: 21, z: 64 }, "minecraft:dark_oak_planks");
+  b.fill({ x: -2, y: 21, z: 48 }, { x: 2, y: 21, z: 61 }, red);
+  b.fill({ x: -18, y: 22, z: 52 }, { x: -8, y: 24, z: 62 }, "minecraft:iron_block");
+  b.fill({ x: -17, y: 25, z: 53 }, { x: -9, y: 27, z: 61 }, "minecraft:air");
+  for (const [x, z, block] of [
+    [-16, 55, "minecraft:chest"], [-13, 55, "minecraft:barrel"], [-10, 55, "minecraft:chest"],
+    [-16, 59, gold], [-13, 59, "minecraft:emerald_block"], [-10, 59, "minecraft:diamond_block"],
+  ] as const) b.set({ x, y: 25, z }, block);
+  // War room table and banner-like wall strips.
+  b.fill({ x: 6, y: 22, z: 34 }, { x: 18, y: 23, z: 43 }, "minecraft:dark_oak_planks");
+  b.fill({ x: 8, y: 24, z: 36 }, { x: 16, y: 24, z: 41 }, "minecraft:green_wool");
+  for (const x of [-18, -6, 6, 18]) b.fill({ x, y: 24, z: 65 }, { x: x + 2, y: 29, z: 65 }, red);
+  yield;
+
+  // Keep roof, central crown, chimneys, and roof lanterns.
+  progress("crowning the keep");
+  b.fill({ x: -24, y: 31, z: 26 }, { x: 24, y: 33, z: 67 }, trim);
+  b.fill({ x: -20, y: 34, z: 30 }, { x: 20, y: 34, z: 63 }, roof);
+  b.fill({ x: -16, y: 35, z: 34 }, { x: 16, y: 35, z: 59 }, roof);
+  for (const [x, z] of [[-20, 30], [20, 30], [-20, 63], [20, 63]] as const) {
+    b.fill({ x: x - 1, y: 34, z: z - 1 }, { x: x + 1, y: 39, z: z + 1 }, "minecraft:bricks");
+    b.set({ x, y: 40, z }, "minecraft:campfire");
+  }
+  yield;
+
+  // Chapel and rear portal crypt.
+  progress("sealing the crypt and portal chamber");
+  b.hollow({ x: -12, y: 1, z: 66 }, { x: 12, y: 15, z: 74 }, stone, floor);
+  b.fill({ x: -3, y: 1, z: 66 }, { x: 3, y: 7, z: 67 }, "minecraft:air");
+  b.fill({ x: -4, y: 1, z: 71 }, { x: 4, y: 8, z: 73 }, "minecraft:obsidian");
+  b.fill({ x: -2, y: 2, z: 71 }, { x: 2, y: 7, z: 73 }, "minecraft:air");
+  b.set({ x: -8, y: 2, z: 70 }, "minecraft:respawn_anchor");
+  b.set({ x: 8, y: 2, z: 70 }, "minecraft:ender_chest");
+  b.fill({ x: -11, y: -1, z: 48 }, { x: -5, y: -1, z: 62 }, "minecraft:iron_block");
+  b.fill({ x: -10, y: 0, z: 49 }, { x: -6, y: 0, z: 61 }, "minecraft:air");
+  b.fill({ x: -10, y: 0, z: 52 }, { x: -6, y: 0, z: 52 }, "minecraft:iron_bars");
+  yield;
+
+  // Courtyard fountain, forge, stable, hay, and compact survival farm.
+  progress("finishing the royal courtyard");
+  b.fill({ x: -7, y: 1, z: 14 }, { x: 7, y: 1, z: 24 }, trim);
+  b.fill({ x: -5, y: 2, z: 16 }, { x: 5, y: 2, z: 22 }, "minecraft:water");
+  b.fill({ x: -1, y: 2, z: 18 }, { x: 1, y: 7, z: 20 }, trim);
+  b.set({ x: 0, y: 8, z: 19 }, "minecraft:water");
+  b.hollow({ x: -27, y: 1, z: 24 }, { x: -16, y: 8, z: 43 }, "minecraft:dark_oak_planks", "minecraft:coarse_dirt");
+  b.fill({ x: -26, y: 2, z: 24 }, { x: -17, y: 6, z: 24 }, "minecraft:air");
+  b.fill({ x: -26, y: 2, z: 35 }, { x: -17, y: 3, z: 35 }, "minecraft:dark_oak_fence");
+  b.fill({ x: -25, y: 2, z: 40 }, { x: -18, y: 4, z: 42 }, "minecraft:hay_block");
+  b.hollow({ x: 16, y: 1, z: 14 }, { x: 27, y: 8, z: 25 }, stone, floor);
+  b.fill({ x: 19, y: 1, z: 17 }, { x: 24, y: 1, z: 22 }, "minecraft:magma");
+  b.set({ x: 18, y: 2, z: 16 }, "minecraft:anvil");
+  b.set({ x: 20, y: 2, z: 16 }, "minecraft:smithing_table");
+  b.set({ x: 22, y: 2, z: 16 }, "minecraft:blast_furnace");
+  b.set({ x: 24, y: 2, z: 16 }, "minecraft:chest");
+  // Farm beds separated by irrigation.
+  b.fill({ x: 15, y: 1, z: 10 }, { x: 26, y: 1, z: 12 }, "minecraft:farmland");
+  b.fill({ x: 20, y: 1, z: 10 }, { x: 21, y: 1, z: 12 }, "minecraft:water");
+  for (let x = 15; x <= 26; x++) {
+    if (x === 20 || x === 21) continue;
+    for (let z = 10; z <= 12; z++) b.set({ x, y: 2, z }, "minecraft:wheat");
+  }
+  yield;
+
+  // The enormous Black Dragon sculpture: body, head, horns, tail, legs, and broad wings.
+  progress("awakening the rooftop dragon");
+  const dragon = "minecraft:black_concrete";
+  const scale = "minecraft:polished_blackstone";
+  // Body and armored spine.
+  for (let z = 39; z <= 57; z++) {
+    const width = z < 44 ? 2 : z < 53 ? 3 : 2;
+    const y = 39 + Math.floor((z - 39) / 7);
+    b.fill({ x: -width, y, z }, { x: width, y: y + 3, z: z + 1 }, dragon);
+    b.fill({ x: -1, y: y + 4, z }, { x: 1, y: y + 4, z: z + 1 }, scale);
+    if (z % 3 === 0) yield;
+  }
+  // Neck, horned head, jaws, eyes, and teeth.
+  b.fill({ x: -2, y: 40, z: 34 }, { x: 2, y: 48, z: 41 }, dragon);
+  b.fill({ x: -4, y: 45, z: 29 }, { x: 4, y: 49, z: 36 }, dragon);
+  b.fill({ x: -3, y: 43, z: 27 }, { x: 3, y: 45, z: 34 }, scale);
+  b.fill({ x: -2, y: 44, z: 26 }, { x: 2, y: 44, z: 29 }, "minecraft:air");
+  b.set({ x: -4, y: 47, z: 28 }, "minecraft:redstone_block");
+  b.set({ x: 4, y: 47, z: 28 }, "minecraft:redstone_block");
+  for (const x of [-3, -1, 1, 3]) b.set({ x, y: 43, z: 28 }, "minecraft:quartz_block");
+  b.fill({ x: -5, y: 49, z: 34 }, { x: -3, y: 53, z: 36 }, "minecraft:deepslate_tile_wall");
+  b.fill({ x: 3, y: 49, z: 34 }, { x: 5, y: 53, z: 36 }, "minecraft:deepslate_tile_wall");
+  // Long curling tail.
+  const tail: LocalPoint[] = [
+    { x: 0, y: 42, z: 58 }, { x: 1, y: 42, z: 61 }, { x: 3, y: 41, z: 64 },
+    { x: 6, y: 40, z: 66 }, { x: 9, y: 39, z: 67 }, { x: 12, y: 38, z: 66 },
+    { x: 14, y: 37, z: 64 }, { x: 15, y: 37, z: 61 },
+  ];
+  for (let i = 0; i < tail.length - 1; i++) b.fill(tail[i], tail[i + 1], i < 4 ? dragon : scale);
+  // Powerful legs and gold claws.
+  for (const [x, z] of [[-5, 48], [5, 48], [-5, 57], [5, 57]] as const) {
+    b.fill({ x: x - 1, y: 35, z: z - 1 }, { x: x + 1, y: 41, z: z + 1 }, dragon);
+    b.fill({ x: x - 2, y: 35, z: z - 2 }, { x: x + 2, y: 35, z: z + 2 }, scale);
+    b.set({ x: x - 2, y: 35, z: z - 3 }, "minecraft:gold_block");
+    b.set({ x: x + 2, y: 35, z: z - 3 }, "minecraft:gold_block");
+  }
+  yield;
+
+  // Giant spread wings with thick ribs and layered dark membranes.
+  for (const side of [-1, 1] as const) {
+    for (let span = 4; span <= 29; span++) {
+      const x = side * span;
+      const front = 39 + Math.floor(span * 0.42);
+      const back = 58 - Math.floor(span * 0.55);
+      const wingY = 47 - Math.floor(span * 0.22);
+      if (front <= back) b.fill({ x, y: wingY, z: front }, { x, y: wingY, z: back }, "minecraft:black_wool");
+      if (span % 5 === 0) {
+        b.fill({ x: side * 3, y: 46, z: 46 }, { x, y: wingY + 1, z: front }, scale);
+        b.fill({ x, y: wingY, z: front }, { x, y: wingY + 2, z: back }, scale);
+      }
+      if (span % 3 === 0) yield;
+    }
+    // Wing-tip talons.
+    b.fill({ x: side * 30, y: 40, z: 49 }, { x: side * 32, y: 43, z: 51 }, "minecraft:deepslate_tile_wall");
   }
 
-  // A hidden marker prevents rebuilding the island every time the world opens.
-  setBlock(realm, MARKER_LOCATION, bedrock);
-}
-
-function setBlock(dimension: Dimension, location: Vector3, permutation: BlockPermutation): void {
-  dimension.getBlock(location)?.setPermutation(permutation);
+  // Soul-fire braziers and final lighting throughout the courtyard.
+  progress("lighting the final braziers");
+  for (const [x, z] of [[-12, 10], [12, 10], [-12, 24], [12, 24], [-26, 47], [26, 47], [-26, 60], [26, 60]] as const) {
+    b.fill({ x, y: 1, z }, { x, y: 3, z }, trim);
+    b.set({ x, y: 4, z }, "minecraft:soul_campfire");
+  }
+  // A fiery breath plume suspended over the front roof.
+  b.fill({ x: -1, y: 43, z: 22 }, { x: 1, y: 44, z: 26 }, "minecraft:magma");
+  b.fill({ x: 0, y: 42, z: 18 }, { x: 0, y: 43, z: 21 }, "minecraft:shroomlight");
+  progress("construction complete");
 }
 
 function runBuildJob(job: Generator<void, void, void>): Promise<void> {
@@ -330,25 +457,8 @@ function runBuildJob(job: Generator<void, void, void>): Promise<void> {
         reject(error);
       }
     }
-
     system.runJob(guardedJob());
   });
-}
-
-function protectArrival(player: Player): void {
-  try {
-    player.addEffect("resistance", 80, { amplifier: 4, showParticles: false });
-  } catch {
-    // Teleporting still succeeds if an effect cannot be applied.
-  }
-}
-
-function playPortalSound(player: Player, pitch: number): void {
-  try {
-    player.playSound("portal.travel", { volume: 0.65, pitch });
-  } catch {
-    // Sound availability can vary across game builds; travel should not.
-  }
 }
 
 function formatError(error: unknown): string {

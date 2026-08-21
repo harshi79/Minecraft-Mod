@@ -105,12 +105,12 @@ async function validateSuite(suite, exclusions, projectDir, outDir, problems) {
   );
 }
 
-const projectDir = await mkdtemp(join(tmpdir(), "crystal-void-mct-"));
+const projectDir = await mkdtemp(join(tmpdir(), "dark-castle-mct-"));
 const outDir = join(projectDir, "out");
 try {
   // mct treats the input folder as the project root containing the packs.
-  await cp(resolve(root, "packs/CrystalVoid_BP"), join(projectDir, "CrystalVoid_BP"), { recursive: true });
-  await cp(resolve(root, "packs/CrystalVoid_RP"), join(projectDir, "CrystalVoid_RP"), { recursive: true });
+  await cp(resolve(root, "packs/DarkCastle_BP"), join(projectDir, "DarkCastle_BP"), { recursive: true });
+  await cp(resolve(root, "packs/DarkCastle_RP"), join(projectDir, "DarkCastle_RP"), { recursive: true });
 
   const problems = [];
   await validateSuite("addon", undefined, projectDir, join(outDir, "addon"), problems);

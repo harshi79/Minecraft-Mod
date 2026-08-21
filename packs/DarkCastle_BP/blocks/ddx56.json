@@ -1,0 +1,27 @@
+{
+  "format_version": "1.26.0",
+  "minecraft:block": {
+    "description": {
+      "identifier": "dark_castle:ddx56",
+      "menu_category": { "category": "construction" }
+    },
+    "components": {
+      "minecraft:display_name": "tile.dark_castle:ddx56.name",
+      "minecraft:geometry": "minecraft:geometry.full_block",
+      "minecraft:material_instances": {
+        "up": { "texture": "ddx56_top", "render_method": "opaque" },
+        "down": { "texture": "ddx56_side", "render_method": "opaque" },
+        "*": { "texture": "ddx56_side", "render_method": "opaque" }
+      },
+      "minecraft:item_visual": {
+        "geometry": "minecraft:geometry.full_block",
+        "material_instances": { "*": { "texture": "ddx56_top", "render_method": "opaque" } }
+      },
+      "minecraft:destructible_by_mining": { "seconds_to_destroy": 5 },
+      "minecraft:destructible_by_explosion": { "explosion_resistance": 1200 },
+      "minecraft:light_emission": 10,
+      "minecraft:map_color": "#521019",
+      "minecraft:loot": "loot_tables/dark_castle/blocks/ddx56.json"
+    }
+  }
+}

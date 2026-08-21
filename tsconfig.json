@@ -4,7 +4,7 @@
     "module": "ES2020",
     "moduleResolution": "node",
     "rootDir": "src",
-    "outDir": "packs/CrystalVoid_BP/scripts",
+    "outDir": "packs/DarkCastle_BP/scripts",
     "strict": true,
     "noEmitOnError": true,
     "skipLibCheck": true,

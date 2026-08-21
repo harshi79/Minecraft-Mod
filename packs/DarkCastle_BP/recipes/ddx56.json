@@ -1,0 +1,17 @@
+{
+  "format_version": "1.26.0",
+  "minecraft:recipe_shaped": {
+    "description": { "identifier": "dark_castle:ddx56_recipe" },
+    "tags": ["crafting_table"],
+    "pattern": ["ONO", "RBR", "ODO"],
+    "key": {
+      "O": { "item": "minecraft:obsidian" },
+      "N": { "item": "minecraft:nether_star" },
+      "R": { "item": "minecraft:redstone_block" },
+      "B": { "item": "minecraft:beacon" },
+      "D": { "item": "minecraft:dragon_breath" }
+    },
+    "unlock": [{ "item": "minecraft:nether_star" }],
+    "result": { "item": "dark_castle:ddx56", "count": 1 }
+  }
+}
