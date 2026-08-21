@@ -4,7 +4,7 @@
     "name": "Crystal Void — Resources",
     "description": "Textures and names for the Crystal Void add-on.",
     "uuid": "fefd22d9-0040-4d19-ab22-e1c942791bc9",
-    "version": [1, 0, 0],
+    "version": [1, 0, 1],
     "min_engine_version": [1, 26, 40],
     "pack_scope": "world"
   },
@@ -13,13 +13,13 @@
       "description": "Crystal Void visual resources",
       "type": "resources",
       "uuid": "c93f8304-b88d-407d-aafc-fd6d7be23e26",
-      "version": [1, 0, 0]
+      "version": [1, 0, 1]
     }
   ],
   "dependencies": [
     {
       "uuid": "bfc252cd-f616-447e-b54e-6339e2bd72a2",
-      "version": [1, 0, 0]
+      "version": [1, 0, 1]
     }
   ],
   "metadata": {

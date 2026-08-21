@@ -5,7 +5,7 @@ import archiver from "archiver";
 
 const root = resolve(import.meta.dirname, "..");
 const releaseDir = resolve(root, "release");
-const outputPath = resolve(releaseDir, "CrystalVoid-v1.0.0.mcaddon");
+const outputPath = resolve(releaseDir, "CrystalVoid-v1.0.1.mcaddon");
 const temporaryPath = `${outputPath}.tmp`;
 
 await mkdir(releaseDir, { recursive: true });

@@ -62,6 +62,47 @@ const allUuids = [
 ];
 if (new Set(allUuids).size !== allUuids.length) errors.push("manifest UUIDs must all be unique");
 
+// Every pack/module/cross-pack version must match the project version in
+// package.json, so Minecraft treats a rebuilt release as a newer pack.
+const packageJson = await readJson(resolve(root, "package.json"));
+const expectedVersion = String(packageJson?.version ?? "").split(".").map((part) => Number(part));
+if (expectedVersion.length !== 3 || expectedVersion.some((part) => !Number.isInteger(part))) {
+  errors.push("package.json version must be a three-part version like 1.0.1");
+}
+
+function checkVersionArray(value, label) {
+  if (JSON.stringify(value) !== JSON.stringify(expectedVersion)) {
+    errors.push(
+      `${label}: version must be [${expectedVersion.join(", ")}] to match package.json version ${packageJson?.version}`,
+    );
+  }
+}
+
+if (behaviorManifest) {
+  checkVersionArray(behaviorManifest.header?.version, "behavior manifest header");
+  for (const module of behaviorManifest.modules ?? []) {
+    checkVersionArray(module.version, `behavior module "${module.type}"`);
+  }
+  for (const dependency of behaviorManifest.dependencies ?? []) {
+    if (dependency.uuid) checkVersionArray(dependency.version, "behavior manifest pack dependency");
+  }
+}
+
+if (resourceManifest) {
+  checkVersionArray(resourceManifest.header?.version, "resource manifest header");
+  for (const module of resourceManifest.modules ?? []) {
+    checkVersionArray(module.version, `resource module "${module.type}"`);
+  }
+  for (const dependency of resourceManifest.dependencies ?? []) {
+    if (dependency.uuid) checkVersionArray(dependency.version, "resource manifest pack dependency");
+  }
+}
+
+const packageTool = await readFile(resolve(root, "tools/package.mjs"), "utf8").catch(() => "");
+if (!packageTool.includes(`CrystalVoid-v${packageJson?.version}.mcaddon`)) {
+  errors.push(`tools/package.mjs must create release/CrystalVoid-v${packageJson?.version}.mcaddon`);
+}
+
 const serverDependency = behaviorManifest?.dependencies?.find((dependency) => dependency.module_name === "@minecraft/server");
 if (serverDependency?.version !== "2.9.0") errors.push("behavior manifest must depend on @minecraft/server 2.9.0");
 
@@ -81,6 +122,17 @@ if (resourceManifest?.header?.pack_scope !== "world") {
 const item = await readJson(resolve(behaviorRoot, "items/dimension_crystal.json"));
 if (item?.["minecraft:item"]?.description?.identifier !== "crystal_void:dimension_crystal") {
   errors.push("Dimension Crystal identifier does not match the script");
+}
+
+// The mobile interact button shows on touch controls when the crystal is
+// aimed at a block, and its label resolves through the resource pack texts.
+if (item?.["minecraft:item"]?.components?.["minecraft:interact_button"] !== "action.interact.crystal_void:open") {
+  errors.push("Dimension Crystal must define minecraft:interact_button action.interact.crystal_void:open");
+}
+
+const enUsLang = await readFile(resolve(resourceRoot, "texts/en_US.lang"), "utf8").catch(() => "");
+if (!enUsLang.includes("action.interact.crystal_void:open=Open Crystal Void")) {
+  errors.push("en_US.lang is missing the interact button translation (action.interact.crystal_void:open)");
 }
 
 for (const blockName of ["void_anchor", "voidstone"]) {
@@ -114,8 +166,14 @@ for (const expectedText of [
   "registerCustomDimension(REALM_ID)",
   "crystal_void:dimension_crystal",
   "crystal_void:void_anchor",
+  "beforeEvents.playerInteractWithBlock",
+  "isFirstEvent",
+  "cancel = true",
 ]) {
   if (!compiledScript.includes(expectedText)) errors.push(`compiled script is missing ${expectedText}`);
+}
+if (compiledScript.includes("afterEvents.playerInteractWithBlock")) {
+  errors.push("compiled script must use the before-event, not the after-event, for Crystal + Anchor interaction");
 }
 
 if (errors.length > 0) {

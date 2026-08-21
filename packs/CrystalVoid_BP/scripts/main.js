@@ -20,9 +20,18 @@ system.beforeEvents.startup.subscribe((event) => {
 });
 // A Dimension Crystal activates any Void Anchor. The same interaction returns
 // the player when it is performed inside the Crystal Void.
-world.afterEvents.playerInteractWithBlock.subscribe((event) => {
-    const heldItem = event.beforeItemStack ?? event.itemStack;
-    if (event.block.typeId !== ANCHOR_ID || heldItem?.typeId !== CRYSTAL_ID) {
+//
+// Mobile note: a custom block with no built-in use behavior does not reliably
+// fire the "successful interaction" after-event on touch controls, so the
+// activation runs on the before-event instead. Cancelling the interaction
+// stops the engine from also running its default response, and isFirstEvent
+// ignores the repeat events generated while a touch button is held down.
+world.beforeEvents.playerInteractWithBlock.subscribe((event) => {
+    if (event.block.typeId !== ANCHOR_ID || event.itemStack?.typeId !== CRYSTAL_ID) {
+        return;
+    }
+    event.cancel = true;
+    if (!event.isFirstEvent) {
         return;
     }
     const player = event.player;

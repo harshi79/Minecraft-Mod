@@ -1,6 +1,6 @@
 {
   "name": "crystal-void-bedrock-addon",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "A Minecraft Bedrock add-on that opens a real Crystal Void dimension with a craftable crystal and anchor.",
   "type": "module",
@@ -9,11 +9,13 @@
     "typecheck": "tsc --noEmit",
     "compile": "tsc",
     "validate": "node tools/validate.mjs",
+    "validate:official": "node tools/validate-official.mjs",
     "package": "node tools/package.mjs",
     "build": "npm run assets && npm run compile && npm run validate && npm run package",
-    "test": "npm run typecheck && npm run validate"
+    "test": "npm run typecheck && npm run validate && npm run validate:official"
   },
   "devDependencies": {
+    "@minecraft/creator-tools": "0.17.7",
     "@minecraft/server": "2.9.0",
     "archiver": "7.0.1",
     "typescript": "5.9.2"
