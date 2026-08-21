@@ -1,8 +1,8 @@
 {
-  "name": "crystal-void-bedrock-addon",
-  "version": "1.0.1",
+  "name": "dark-medieval-castle-bedrock-addon",
+  "version": "1.0.0",
   "private": true,
-  "description": "A Minecraft Bedrock add-on that opens a real Crystal Void dimension with a craftable crystal and anchor.",
+  "description": "A Minecraft Bedrock add-on that constructs a furnished dark medieval royal castle and rooftop dragon from the DDX56 Castle Heart.",
   "type": "module",
   "scripts": {
     "assets": "node tools/generate-assets.mjs",

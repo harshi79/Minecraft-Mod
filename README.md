@@ -1,133 +1,90 @@
-# Crystal Void — Minecraft Bedrock Add-On
+# DDX56 — Dark Medieval Castle (Minecraft Bedrock Add-On)
 
-Crystal Void is a small, from-scratch Bedrock add-on for **Minecraft 1.26.40+** (including Android `1.26.44.3`). It adds a real script-created dimension, a craftable **Dimension Crystal**, a **Void Anchor**, custom blocks, original pixel-art textures, and a safe way home.
+Build an enormous furnished royal fortress in moments. This Bedrock add-on targets **Minecraft 1.26.40+**, including Android **1.26.44.3**.
 
-## Download and install on Android
+## Download
 
-The ready-to-import file is:
+Import [`release/DarkMedievalCastle-v1.0.0.mcaddon`](release/DarkMedievalCastle-v1.0.0.mcaddon), then activate **Dark Medieval Castle — Behavior** in a world. The resource pack activates with it.
 
-**[`release/CrystalVoid-v1.0.1.mcaddon`](release/CrystalVoid-v1.0.1.mcaddon)**
+## Build the castle
 
-(The original [`release/CrystalVoid-v1.0.0.mcaddon`](release/CrystalVoid-v1.0.0.mcaddon) is kept for reference.)
+### 1. Obtain the Castle Heart
 
-1. Move or download the `.mcaddon` file onto the phone.
-2. Tap the file and choose **Minecraft** if Android asks which app should open it.
-3. Wait for Minecraft to report that both packs imported successfully. Because every pack and module version is bumped to 1.0.1, Minecraft replaces the previously installed 1.0.0 packs instead of keeping stale copies.
-4. Create a new world (recommended for the first test).
-5. Open **Add-Ons → Behavior Packs → My Packs** and activate **Crystal Void — Behavior**. Its resource pack should activate with it.
-6. Enter the world and craft the two items below.
+For a quick Creative test:
 
-No experimental toggle is required on Minecraft 1.26.40+; custom dimensions moved to the stable Script API before this target version. Back up an important world before testing any new add-on.
-
-## How to play
-
-### 1. Craft a Dimension Crystal
-
-At a crafting table:
-
-```text
-. A .
-A E A
-. C .
+```mcfunction
+/give @s dark_castle:ddx56
+/give @s lever
 ```
 
-- `A` — Amethyst Shard
-- `E` — Ender Pearl
-- `C` — Crying Obsidian
-
-The crystal is reusable and does not get consumed during travel.
-
-### 2. Craft a Void Anchor
+The **DDX56 — Castle Heart** also has a survival recipe:
 
 ```text
-O O O
-O A O
-O C O
+O N O
+R B R
+O D O
 ```
 
 - `O` — Obsidian
-- `A` — Amethyst Block
-- `C` — Crying Obsidian
+- `N` — Nether Star
+- `R` — Redstone Block
+- `B` — Beacon
+- `D` — Dragon's Breath
 
-### 3. Open the dimension
+### 2. Choose the site
 
-1. Place the **Void Anchor**.
-2. Hold the **Dimension Crystal**.
-3. Tap the Void Anchor — or press the **"Open Crystal Void"** button that appears on touch controls while aiming at the anchor. (Fixed in v1.0.1 for Android.)
-4. The first trip builds a floating island, so it can take a moment on a slower phone.
-5. In the Crystal Void, use the crystal on the central anchor to return to the exact place you left.
+Find a large open area. The build replaces blocks in an area approximately **69 blocks wide, 75 blocks long, and 52 blocks high**. Back up an important world first.
 
-### Quick Creative-mode test
+Place DDX56 at the center of the future front gate. Attach a normal lever directly **on top or to any side** of DDX56. Face the direction in which the castle should extend, then pull the lever.
 
-Enable cheats only if you want to skip crafting, then run:
+The Castle Heart becomes crying obsidian and the complete fortress rises in fast construction stages. It cannot accidentally regenerate from the same heart.
 
-```mcfunction
-/give @s crystal_void:dimension_crystal
-/give @s crystal_void:void_anchor
-```
+## Included in the fortress
 
-Place the anchor, hold the crystal, and tap the anchor.
+- Symmetrical dark medieval curtain walls, battlements, gatehouse, and four huge watchtowers
+- Three-floor royal keep and grand red-carpet throne hall with a golden throne
+- Royal and guest bedrooms, dining hall, kitchen, library, enchanting room, brewery, map/war room, and chapel
+- Furnaces, blast furnace, smoker, crafting, smithing, stonecutting, grinding, anvils, barrels, and storage
+- Secure iron treasury with valuable display blocks
+- Courtyard fountain, stable, hay loft, forge, irrigated wheat farm, and soul-fire braziers
+- Rear crypt and protected Nether portal frame
+- **Enormous Black Dragon rooftop sculpture** with a horned head, glowing red eyes, teeth, armored body, legs, claws, curling tail, fire breath, and wings spread nearly the full width of the castle
+- Cardinal rotation: the fortress builds in the direction the player faces when activating the lever
+- Chunk-safe staged construction with progress messages, designed for Android
 
-## Features
-
-- Real custom void dimension: `crystal_void:realm`
-- Reusable glowing Dimension Crystal
-- Craftable Void Anchor portal block
-- Return-point memory for each player and each vanilla dimension
-- Procedurally built floating island with amethyst runes, crystal spires, lighting, and custom Voidstone
-- Safe arrival protection and clear mobile-friendly messages
-- Original 16×16 pixel-art textures and pack icon
-- Behavior and resource packs bundled into one Android-friendly `.mcaddon`
-
-## What changed in v1.0.1
-
-- Crystal + Anchor detection moved to `world.beforeEvents.playerInteractWithBlock`, so tapping the anchor works reliably on Android touch controls even though the anchor has no built-in use behavior.
-- The interaction is cancelled (`event.cancel = true`) and guarded by `event.isFirstEvent`, so holding the touch button does not spam activation.
-- The Dimension Crystal now shows an **"Open Crystal Void"** mobile interact button (`minecraft:interact_button`).
-- Dimension generation and return-location behavior are unchanged.
-- All pack, module, cross-dependency, package, and release versions were bumped to 1.0.1 so Minecraft replaces the installed packs.
-
-## Project layout
-
-```text
-packs/
-  CrystalVoid_BP/       Behavior pack (items, blocks, recipes, compiled script)
-  CrystalVoid_RP/       Resource pack (textures and language files)
-src/main.ts             Dimension registration, island generation, and travel logic
-tools/                   Asset generation, validation, and packaging scripts
-release/                 Ready-to-import .mcaddon
-```
+The dragon is a permanent block sculpture, not a living mob, so it will not fly away or damage the palace.
 
 ## Build from source
 
-Install Node.js 18 or newer, then run:
+Requires Node.js 18 or newer:
 
 ```bash
 npm install
 npm run build
 ```
 
-The build:
-
-1. regenerates all PNG assets,
-2. compiles TypeScript,
-3. validates manifests, JSON, UUIDs, textures, identifiers, versions, and the compiled script,
-4. creates `release/CrystalVoid-v1.0.1.mcaddon`.
-
-Run checks without repackaging:
+Run all TypeScript, project, and official Mojang Creator Tools checks with:
 
 ```bash
 npm test
 ```
 
-`npm test` includes official Mojang validation through `@minecraft/creator-tools` (`mct`): the strict `addon` suite and the full validator suite, both required to pass with zero errors and zero warnings. See `tools/validate-official.mjs` for details on the one excluded test (`UNLINK`) and why.
+## Project layout
 
-## Compatibility notes
+```text
+packs/DarkCastle_BP/   Behavior pack, DDX56 block, recipe, and compiled builder
+packs/DarkCastle_RP/   Original DDX56 textures, icon, and language file
+src/main.ts            Lever detection, rotation, castle, rooms, and dragon generator
+tools/                 Asset generation, validation, and .mcaddon packaging
+release/               Ready-to-import Android/Bedrock add-on
+```
 
-- Target: Minecraft Bedrock `1.26.40+`
-- Tested statically against `@minecraft/server` `2.9.0`
-- Intended phone version: Android `1.26.44.3`
-- The current custom-dimension API creates a void world; the add-on builds its terrain with script when first entered.
+## Compatibility
+
+- Minecraft Bedrock `1.26.40+`
+- Intended Android build: `1.26.44.3`
+- Script API: `@minecraft/server` `2.9.0`
+- No experimental toggle is intended to be required
 
 ## License
 

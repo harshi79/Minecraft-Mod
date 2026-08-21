@@ -2,184 +2,38 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
-const behaviorRoot = resolve(root, "packs/CrystalVoid_BP");
-const resourceRoot = resolve(root, "packs/CrystalVoid_RP");
+const behaviorRoot = resolve(root, "packs/DarkCastle_BP");
+const resourceRoot = resolve(root, "packs/DarkCastle_RP");
 const errors = [];
-
-async function walk(path) {
-  const entries = await readdir(path, { withFileTypes: true });
-  const paths = [];
-  for (const entry of entries) {
-    const fullPath = resolve(path, entry.name);
-    if (entry.isDirectory()) paths.push(...(await walk(fullPath)));
-    else paths.push(fullPath);
-  }
-  return paths;
-}
-
-async function readJson(path) {
-  try {
-    return JSON.parse(await readFile(path, "utf8"));
-  } catch (error) {
-    errors.push(`${path}: invalid JSON (${error.message})`);
-    return undefined;
-  }
-}
-
-async function requireFile(path) {
-  try {
-    const details = await stat(path);
-    if (!details.isFile() || details.size === 0) errors.push(`${path}: missing or empty`);
-  } catch {
-    errors.push(`${path}: missing`);
-  }
-}
-
-function checkManifest(manifest, label) {
+async function walk(path) { const result = []; for (const entry of await readdir(path, { withFileTypes: true })) { const full = resolve(path, entry.name); entry.isDirectory() ? result.push(...await walk(full)) : result.push(full); } return result; }
+async function json(path) { try { return JSON.parse(await readFile(path, "utf8")); } catch (error) { errors.push(`${path}: invalid JSON (${error.message})`); } }
+async function required(path) { try { if (!(await stat(path)).isFile() || (await stat(path)).size === 0) errors.push(`${path}: missing or empty`); } catch { errors.push(`${path}: missing`); } }
+function manifestChecks(manifest, label) {
   if (!manifest) return [];
-  if (manifest.format_version !== 2) errors.push(`${label}: manifest format_version must be 2`);
-  if (JSON.stringify(manifest.header?.min_engine_version) !== JSON.stringify([1, 26, 40])) {
-    errors.push(`${label}: min_engine_version must target 1.26.40`);
-  }
-
+  if (manifest.format_version !== 2) errors.push(`${label}: format_version must be 2`);
+  if (JSON.stringify(manifest.header?.min_engine_version) !== "[1,26,40]") errors.push(`${label}: min_engine_version must be [1,26,40]`);
   const uuids = [manifest.header?.uuid, ...(manifest.modules ?? []).map((module) => module.uuid)];
-  for (const uuid of uuids) {
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid ?? "")) {
-      errors.push(`${label}: invalid UUID ${String(uuid)}`);
-    }
-  }
+  for (const uuid of uuids) if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid ?? "")) errors.push(`${label}: invalid UUID ${uuid}`);
   return uuids;
 }
-
-const allFiles = [...(await walk(behaviorRoot)), ...(await walk(resourceRoot))];
-for (const path of allFiles.filter((file) => extname(file) === ".json")) await readJson(path);
-
-const behaviorManifest = await readJson(resolve(behaviorRoot, "manifest.json"));
-const resourceManifest = await readJson(resolve(resourceRoot, "manifest.json"));
-const allUuids = [
-  ...checkManifest(behaviorManifest, "behavior manifest"),
-  ...checkManifest(resourceManifest, "resource manifest"),
-];
-if (new Set(allUuids).size !== allUuids.length) errors.push("manifest UUIDs must all be unique");
-
-// Every pack/module/cross-pack version must match the project version in
-// package.json, so Minecraft treats a rebuilt release as a newer pack.
-const packageJson = await readJson(resolve(root, "package.json"));
-const expectedVersion = String(packageJson?.version ?? "").split(".").map((part) => Number(part));
-if (expectedVersion.length !== 3 || expectedVersion.some((part) => !Number.isInteger(part))) {
-  errors.push("package.json version must be a three-part version like 1.0.1");
-}
-
-function checkVersionArray(value, label) {
-  if (JSON.stringify(value) !== JSON.stringify(expectedVersion)) {
-    errors.push(
-      `${label}: version must be [${expectedVersion.join(", ")}] to match package.json version ${packageJson?.version}`,
-    );
-  }
-}
-
-if (behaviorManifest) {
-  checkVersionArray(behaviorManifest.header?.version, "behavior manifest header");
-  for (const module of behaviorManifest.modules ?? []) {
-    checkVersionArray(module.version, `behavior module "${module.type}"`);
-  }
-  for (const dependency of behaviorManifest.dependencies ?? []) {
-    if (dependency.uuid) checkVersionArray(dependency.version, "behavior manifest pack dependency");
-  }
-}
-
-if (resourceManifest) {
-  checkVersionArray(resourceManifest.header?.version, "resource manifest header");
-  for (const module of resourceManifest.modules ?? []) {
-    checkVersionArray(module.version, `resource module "${module.type}"`);
-  }
-  for (const dependency of resourceManifest.dependencies ?? []) {
-    if (dependency.uuid) checkVersionArray(dependency.version, "resource manifest pack dependency");
-  }
-}
-
-const packageTool = await readFile(resolve(root, "tools/package.mjs"), "utf8").catch(() => "");
-if (!packageTool.includes(`CrystalVoid-v${packageJson?.version}.mcaddon`)) {
-  errors.push(`tools/package.mjs must create release/CrystalVoid-v${packageJson?.version}.mcaddon`);
-}
-
-const serverDependency = behaviorManifest?.dependencies?.find((dependency) => dependency.module_name === "@minecraft/server");
-if (serverDependency?.version !== "2.9.0") errors.push("behavior manifest must depend on @minecraft/server 2.9.0");
-
-const resourceDependency = behaviorManifest?.dependencies?.find(
-  (dependency) => dependency.uuid === resourceManifest?.header?.uuid,
-);
-if (!resourceDependency) errors.push("behavior manifest must depend on the resource pack");
-
-const behaviorDependency = resourceManifest?.dependencies?.find(
-  (dependency) => dependency.uuid === behaviorManifest?.header?.uuid,
-);
-if (!behaviorDependency) errors.push("resource manifest must depend on the behavior pack");
-if (resourceManifest?.header?.pack_scope !== "world") {
-  errors.push("resource manifest pack_scope must be world");
-}
-
-const item = await readJson(resolve(behaviorRoot, "items/dimension_crystal.json"));
-if (item?.["minecraft:item"]?.description?.identifier !== "crystal_void:dimension_crystal") {
-  errors.push("Dimension Crystal identifier does not match the script");
-}
-
-// The mobile interact button shows on touch controls when the crystal is
-// aimed at a block, and its label resolves through the resource pack texts.
-if (item?.["minecraft:item"]?.components?.["minecraft:interact_button"] !== "action.interact.crystal_void:open") {
-  errors.push("Dimension Crystal must define minecraft:interact_button action.interact.crystal_void:open");
-}
-
-const enUsLang = await readFile(resolve(resourceRoot, "texts/en_US.lang"), "utf8").catch(() => "");
-if (!enUsLang.includes("action.interact.crystal_void:open=Open Crystal Void")) {
-  errors.push("en_US.lang is missing the interact button translation (action.interact.crystal_void:open)");
-}
-
-for (const blockName of ["void_anchor", "voidstone"]) {
-  const block = await readJson(resolve(behaviorRoot, `blocks/${blockName}.json`));
-  if (block?.["minecraft:block"]?.description?.identifier !== `crystal_void:${blockName}`) {
-    errors.push(`${blockName} identifier is incorrect`);
-  }
-}
-
-for (const path of [
-  "packs/CrystalVoid_BP/scripts/main.js",
-  "packs/CrystalVoid_BP/pack_icon.png",
-  "packs/CrystalVoid_RP/pack_icon.png",
-  "packs/CrystalVoid_RP/textures/crystal_void/crystal_void/dimension_crystal.png",
-  "packs/CrystalVoid_RP/textures/crystal_void/crystal_void/voidstone.png",
-  "packs/CrystalVoid_RP/textures/crystal_void/crystal_void/void_anchor_top.png",
-  "packs/CrystalVoid_RP/textures/crystal_void/crystal_void/void_anchor_side.png",
-]) {
-  await requireFile(resolve(root, path));
-}
-
-for (const path of allFiles.filter((file) => extname(file) === ".png")) {
-  const bytes = await readFile(path);
-  if (!bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
-    errors.push(`${path}: invalid PNG signature`);
-  }
-}
-
-const compiledScript = await readFile(resolve(behaviorRoot, "scripts/main.js"), "utf8").catch(() => "");
-for (const expectedText of [
-  "registerCustomDimension(REALM_ID)",
-  "crystal_void:dimension_crystal",
-  "crystal_void:void_anchor",
-  "beforeEvents.playerInteractWithBlock",
-  "isFirstEvent",
-  "cancel = true",
-]) {
-  if (!compiledScript.includes(expectedText)) errors.push(`compiled script is missing ${expectedText}`);
-}
-if (compiledScript.includes("afterEvents.playerInteractWithBlock")) {
-  errors.push("compiled script must use the before-event, not the after-event, for Crystal + Anchor interaction");
-}
-
-if (errors.length > 0) {
-  console.error("Validation failed:");
-  for (const error of errors) console.error(`- ${error}`);
-  process.exitCode = 1;
-} else {
-  console.log(`validated ${allFiles.length} pack files successfully`);
-}
+const files = [...await walk(behaviorRoot), ...await walk(resourceRoot)];
+for (const file of files.filter((path) => extname(path) === ".json")) await json(file);
+const bp = await json(resolve(behaviorRoot, "manifest.json"));
+const rp = await json(resolve(resourceRoot, "manifest.json"));
+const uuids = [...manifestChecks(bp, "behavior manifest"), ...manifestChecks(rp, "resource manifest")];
+if (new Set(uuids).size !== uuids.length) errors.push("all pack and module UUIDs must be unique");
+const pkg = await json(resolve(root, "package.json"));
+const version = String(pkg?.version ?? "").split(".").map(Number);
+for (const [label, value] of [["behavior header", bp?.header?.version], ["resource header", rp?.header?.version], ...(bp?.modules ?? []).map((m) => [`behavior ${m.type} module`, m.version]), ...(rp?.modules ?? []).map((m) => [`resource ${m.type} module`, m.version])]) if (JSON.stringify(value) !== JSON.stringify(version)) errors.push(`${label}: version must match package.json`);
+if (!bp?.dependencies?.some((d) => d.uuid === rp?.header?.uuid)) errors.push("behavior pack must depend on resource pack");
+if (!rp?.dependencies?.some((d) => d.uuid === bp?.header?.uuid)) errors.push("resource pack must depend on behavior pack");
+if (bp?.dependencies?.find((d) => d.module_name === "@minecraft/server")?.version !== "2.9.0") errors.push("@minecraft/server dependency must be 2.9.0");
+const block = await json(resolve(behaviorRoot, "blocks/ddx56.json"));
+if (block?.["minecraft:block"]?.description?.identifier !== "dark_castle:ddx56") errors.push("DDX56 block identifier is incorrect");
+for (const path of ["packs/DarkCastle_BP/scripts/main.js", "packs/DarkCastle_BP/pack_icon.png", "packs/DarkCastle_RP/pack_icon.png", "packs/DarkCastle_RP/textures/dark_castle/dark_castle/ddx56_top.png", "packs/DarkCastle_RP/textures/dark_castle/dark_castle/ddx56_side.png"]) await required(resolve(root, path));
+for (const path of files.filter((file) => extname(file) === ".png")) { const bytes = await readFile(path); if (!bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) errors.push(`${path}: invalid PNG`); }
+const script = await readFile(resolve(behaviorRoot, "scripts/main.js"), "utf8").catch(() => "");
+for (const text of ["dark_castle:ddx56", "minecraft:lever", "buildRoyalCastle", "beforeEvents.playerInteractWithBlock", "tickingAreaManager", "rooftop dragon"]) if (!script.includes(text)) errors.push(`compiled script is missing ${text}`);
+const packageTool = await readFile(resolve(root, "tools/package.mjs"), "utf8");
+if (!packageTool.includes(`DarkMedievalCastle-v${pkg?.version}.mcaddon`)) errors.push("package filename does not match project version");
+if (errors.length) { console.error("Validation failed:"); for (const error of errors) console.error(`- ${error}`); process.exitCode = 1; } else console.log(`validated ${files.length} pack files successfully`);

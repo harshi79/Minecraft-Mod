@@ -1,0 +1,10 @@
+{
+  "pools": [
+    {
+      "rolls": 1,
+      "entries": [
+        { "type": "item", "name": "dark_castle:ddx56", "weight": 1 }
+      ]
+    }
+  ]
+}

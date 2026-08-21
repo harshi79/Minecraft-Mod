@@ -1,0 +1,41 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "Dark Medieval Castle — Behavior",
+    "description": "Build a royal dark castle and enormous rooftop dragon with the DDX56 Castle Heart.",
+    "uuid": "a0a9ef04-8c5d-4c10-aac9-81330e866984",
+    "version": [1, 0, 0],
+    "min_engine_version": [1, 26, 40]
+  },
+  "modules": [
+    {
+      "description": "Castle Heart block and recipe",
+      "type": "data",
+      "uuid": "7316e757-8b8b-4ba5-b68a-619a3a1c52b4",
+      "version": [1, 0, 0]
+    },
+    {
+      "description": "Royal castle construction system",
+      "type": "script",
+      "language": "javascript",
+      "uuid": "0b9af143-8327-4896-90bc-82c2cc20a0f7",
+      "version": [1, 0, 0],
+      "entry": "scripts/main.js"
+    }
+  ],
+  "dependencies": [
+    {
+      "uuid": "f58546d0-89b7-43bd-8887-3bc6e8cab461",
+      "version": [1, 0, 0]
+    },
+    {
+      "module_name": "@minecraft/server",
+      "version": "2.9.0"
+    }
+  ],
+  "metadata": {
+    "authors": ["Dark Castle contributors"],
+    "license": "MIT",
+    "product_type": "addon"
+  }
+}

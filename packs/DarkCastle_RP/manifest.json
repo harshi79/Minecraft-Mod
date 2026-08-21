@@ -1,0 +1,30 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "Dark Medieval Castle — Resources",
+    "description": "Original textures and names for the DDX56 Dark Castle add-on.",
+    "uuid": "f58546d0-89b7-43bd-8887-3bc6e8cab461",
+    "version": [1, 0, 0],
+    "min_engine_version": [1, 26, 40],
+    "pack_scope": "world"
+  },
+  "modules": [
+    {
+      "description": "Dark Castle visual resources",
+      "type": "resources",
+      "uuid": "b1fe6ec0-0df6-45ef-b25f-ea80e133025b",
+      "version": [1, 0, 0]
+    }
+  ],
+  "dependencies": [
+    {
+      "uuid": "a0a9ef04-8c5d-4c10-aac9-81330e866984",
+      "version": [1, 0, 0]
+    }
+  ],
+  "metadata": {
+    "authors": ["Dark Castle contributors"],
+    "license": "MIT",
+    "product_type": "addon"
+  }
+}
