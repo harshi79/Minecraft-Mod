@@ -1,0 +1,41 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "Crystal Void — Behavior",
+    "description": "Craft a Dimension Crystal and open a path to the Crystal Void.",
+    "uuid": "bfc252cd-f616-447e-b54e-6339e2bd72a2",
+    "version": [1, 0, 0],
+    "min_engine_version": [1, 26, 40]
+  },
+  "modules": [
+    {
+      "description": "Crystal Void blocks, items, and recipes",
+      "type": "data",
+      "uuid": "51a4aa87-74b5-4a64-bf4b-bd2c5ef874c6",
+      "version": [1, 0, 0]
+    },
+    {
+      "description": "Crystal Void dimension and travel logic",
+      "type": "script",
+      "language": "javascript",
+      "uuid": "272a7e0d-87df-4ba5-b777-23bad365528a",
+      "version": [1, 0, 0],
+      "entry": "scripts/main.js"
+    }
+  ],
+  "dependencies": [
+    {
+      "uuid": "fefd22d9-0040-4d19-ab22-e1c942791bc9",
+      "version": [1, 0, 0]
+    },
+    {
+      "module_name": "@minecraft/server",
+      "version": "2.9.0"
+    }
+  ],
+  "metadata": {
+    "authors": ["Crystal Void contributors"],
+    "license": "MIT",
+    "product_type": "addon"
+  }
+}
