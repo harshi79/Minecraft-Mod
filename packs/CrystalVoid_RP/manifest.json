@@ -1,0 +1,30 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "Crystal Void — Resources",
+    "description": "Textures and names for the Crystal Void add-on.",
+    "uuid": "fefd22d9-0040-4d19-ab22-e1c942791bc9",
+    "version": [1, 0, 0],
+    "min_engine_version": [1, 26, 40],
+    "pack_scope": "world"
+  },
+  "modules": [
+    {
+      "description": "Crystal Void visual resources",
+      "type": "resources",
+      "uuid": "c93f8304-b88d-407d-aafc-fd6d7be23e26",
+      "version": [1, 0, 0]
+    }
+  ],
+  "dependencies": [
+    {
+      "uuid": "bfc252cd-f616-447e-b54e-6339e2bd72a2",
+      "version": [1, 0, 0]
+    }
+  ],
+  "metadata": {
+    "authors": ["Crystal Void contributors"],
+    "license": "MIT",
+    "product_type": "addon"
+  }
+}

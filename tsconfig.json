@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2021",
+    "module": "ES2020",
+    "moduleResolution": "node",
+    "rootDir": "src",
+    "outDir": "packs/CrystalVoid_BP/scripts",
+    "strict": true,
+    "noEmitOnError": true,
+    "skipLibCheck": true,
+    "removeComments": false,
+    "sourceMap": false,
+    "declaration": false,
+    "types": ["@minecraft/server"]
+  },
+  "include": ["src/**/*.ts"]
+}
